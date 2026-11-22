@@ -21,6 +21,7 @@
 #include <boost/optional.hpp>
 #include <iterator>
 #include <queue>
+#include <regex>
 #include <unordered_set>
 #include "chain_utils.h"
 #include "design_utils.h"
@@ -187,7 +188,19 @@ void XilinxPacker::convert_dram_leaf_cells()
                               ci->type.c_str(ctx), ctx->nameOf(ci), port);
                 ci->disconnectPort(ctx->id(port));
             }
-            if (int_or_default(ci->params, ctx->id("RAM_ADDRESS_MASK"), 0) != 0)
+            auto mask = ci->params.find(ctx->id("RAM_ADDRESS_MASK"));
+            bool mask_is_zero = true;
+            if (mask != ci->params.end()) {
+                const Property &value = mask->second;
+                if (!value.is_string) {
+                    mask_is_zero = value.str.find('1') == std::string::npos;
+                } else {
+                    // A string value may be written in any base ("0", "2'b00", "0x0"); accept only zero.
+                    static const std::regex zero(" *(0+|[0-9]*'[bBoOdDhH]0+|0[xX]0+) *");
+                    mask_is_zero = std::regex_match(value.as_string(), zero);
+                }
+            }
+            if (!mask_is_zero)
                 log_error("%s '%s' has a non-zero RAM_ADDRESS_MASK: distributed-RAM leaf cells of memories deeper "
                           "than 64 are not supported\n",
                           ci->type.c_str(ctx), ctx->nameOf(ci));
